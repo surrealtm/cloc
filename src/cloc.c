@@ -48,6 +48,50 @@ void destroy_arena(Arena *arena) {
 
 
 
+/* ---------------------------------------------- String Builder ---------------------------------------------- */
+
+#define aprint(arena, format, ...) push_arena(arena, sprintf((arena)->base + (arena)->committed, format, ##__VA_ARGS__) + 1)
+
+static
+char *push_string_builder(String_Builder *builder, s64 characters) {
+    assert(builder->pointer + builder->size_in_characters == builder->arena->base + builder->arena->committed); // Make sure we are still contiguous inside the arena and nothing else has used the arena since. Otherwise, our string content would be corrupted!
+    char *pointer = push_arena(builder->arena, characters);
+    builder->size_in_characters += characters;
+    return pointer;
+}
+
+void create_string_builder(String_Builder *builder, Arena *arena) {
+    builder->arena   = arena;
+    builder->pointer = push_arena(builder->arena, 0);
+    builder->size_in_characters = 0;
+}
+
+void append_string(String_Builder *builder, const char *data) {
+    s64 length = strlen(data);
+    char *pointer = push_string_builder(builder, length);
+    memcpy(pointer, data, length);
+}
+
+void append_char(String_Builder *builder, char data) {
+    char *pointer = push_string_builder(builder, 1);
+    *pointer = data;
+}
+
+void append_repeated_char(String_Builder *builder, char data, s64 n) {
+    char *pointer = push_string_builder(builder, n);
+    memset(pointer, data, n);
+}
+
+void print_string_builder(String_Builder *builder) {
+    printf("%.*s", (int) builder->size_in_characters, builder->pointer);
+}
+
+void print_string_builder_as_line(String_Builder *builder) {
+    printf("%.*s\n", (int) builder->size_in_characters, builder->pointer);
+}
+
+
+
 /* ----------------------------------------------- Entry Point ----------------------------------------------- */
 
 void register_file_to_parse(Cloc *cloc, char *file_path) {
@@ -75,15 +119,41 @@ void register_directory_to_parse(Cloc *cloc, char *directory_path) {
     }
 }
 
+static
+void print_separator_line(Cloc *cloc, const char *content) {
+    String_Builder builder;
+    create_string_builder(&builder, &cloc->arena);
+
+    s64 total_stars = (OUTPUT_LINE_WIDTH - strlen(content) - 2);
+    s64 lhs_stars = total_stars / 2;
+    s64 rhs_stars = total_stars / 2 + total_stars % 2;
+
+    append_repeated_char(&builder, '*', lhs_stars);
+    append_char(&builder, ' ');
+    append_string(&builder, content);
+    append_char(&builder, ' ');
+    append_repeated_char(&builder, '*', rhs_stars);
+    
+    print_string_builder_as_line(&builder);
+}
+
+static
+void print_output_line(Cloc *cloc, char *identifier, s64 lines) {
+    
+}
+
 int main(int argc, char *argv[]) {
+    Hardware_Time start = os_get_hardware_time();
+
     //
     // Set up the global instance
     //
     Cloc cloc = { 0 };
     create_arena(&cloc.arena, 1024 * 1024);
-
+    
     {
         cloc.cli_valid = true;
+        cloc.output_mode = OUTPUT_Total;
         
         for(int i = 1; i < argc; ++i) {
             char *argument = argv[i];
@@ -141,10 +211,24 @@ int main(int argc, char *argv[]) {
         //
         // Finalize the result
         //
-        for(File *file = cloc.first_file; file != NULL; file = file->next) {
-            printf(" > %s: %" PRId64 " lines\n", file->file_path, file->lines);
+        print_separator_line(&cloc, CLOC_VERSION_STRING);
+
+        switch(cloc.output_mode) {
+        case OUTPUT_By_File: {
+            for(File *file = cloc.first_file; file != NULL; file = file->next) {
+                printf(" > %s: %" PRId64 " lines\n", file->file_path, file->lines);
+            }
+        } break;
+
+        case OUTPUT_Total: {
+            
+        } break;
         }
+
+        Hardware_Time end = os_get_hardware_time();
+        f64 seconds = os_convert_hardware_time_to_seconds(end - start);
+        print_separator_line(&cloc, aprint(&cloc.arena, "%.2fs", seconds));
     }
-    
+
     return cloc.cli_valid ? 0 : -1;
 }

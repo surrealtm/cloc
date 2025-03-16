@@ -68,3 +68,17 @@ Pid os_spawn_thread(int (*procedure)(void *), void *argument) {
 void os_join_thread(Pid pid) {
     WaitForSingleObject(pid, INFINITE);
 }
+
+
+
+Hardware_Time os_get_hardware_time() {
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    return counter.QuadPart;
+}
+
+f64 os_convert_hardware_time_to_seconds(Hardware_Time delta) {
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
+    return (f64) delta / (f64) frequency.QuadPart;
+}
