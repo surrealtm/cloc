@@ -1,6 +1,8 @@
+struct Cloc;
+
 typedef struct Worker {
-    Cloc *cloc;
-    Pid global_thread_handle;
+    struct Cloc *cloc;
+    Pid pid;
 } Worker;
 
-void worker_thread(Worker *worker);
+int worker_thread(Worker *worker);

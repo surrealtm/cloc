@@ -5,8 +5,8 @@
 
 // --- Local Headers ---
 #include "os.h"
-#include "cloc.h"
 #include "worker.h"
+#include "cloc.h"
 
 // --- Local Sources ---
 #include "worker.c"
@@ -56,6 +56,7 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
     entry->file_path = file_path;
     cloc->first_file = entry;
     cloc->next_file  = entry;
+    ++cloc->file_count;
 }
 
 void register_directory_to_parse(Cloc *cloc, char *directory_path) {
@@ -122,25 +123,27 @@ int main(int argc, char *argv[]) {
         //
         // Set up and spawn the thread workers
         //
-        Worker workers[MAX_WORKERS];
-        int active_workers = 12; // @Incomplete: Get the cpu core count from the OS
-
-        for(int i = 0; i < active_workers; ++i) {
-            workers[i].cloc = &cloc;
-            // @Incomplete: Spawn the thread
+        s64 cpu_cores = os_get_hardware_thread_count();
+        cloc.active_workers = min(cpu_cores, cloc.file_count); 
+        
+        for(int i = 0; i < cloc.active_workers; ++i) {
+            cloc.workers[i].cloc = &cloc;
+            cloc.workers[i].pid = os_spawn_thread(worker_thread, &cloc.workers[i]);
         }
         
         //
         // Wait for all thread workers to complete
         //
-        for(int i = 0; i < active_workers; ++i) {
-            // @Incomplete: Join the thread
+        for(int i = 0; i < cloc.active_workers; ++i) {
+            os_join_thread(cloc.workers[i].pid);
         }
         
         //
         // Finalize the result
         //
-        // @Incomplete: Print all files or the sum of their results...
+        for(File *file = cloc.first_file; file != NULL; file = file->next) {
+            printf(" > %s: %" PRId64 " lines\n", file->file_path, file->lines);
+        }
     }
     
     return cloc.cli_valid ? 0 : -1;

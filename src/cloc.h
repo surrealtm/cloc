@@ -15,6 +15,8 @@ void destroy_arena(Arena *arena);
 typedef struct File {
     struct File *next;
     char *file_path;
+
+    s64 lines;
 } File;
 
 typedef struct Cloc {
@@ -24,6 +26,10 @@ typedef struct Cloc {
     
     File *first_file;
     File *next_file;
+    s64 file_count;
+    
+    Worker workers[MAX_WORKERS];
+    s64 active_workers;
 } Cloc;
 
 void register_file_to_parse(Cloc *cloc, char *file_path);

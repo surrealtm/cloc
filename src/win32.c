@@ -52,3 +52,19 @@ void close_file_iterator(File_Iterator *iterator) {
     iterator->path = NULL;
     iterator->kind = OS_PATH_Non_Existent;
 }
+
+
+
+s64 os_get_hardware_thread_count() {
+    SYSTEM_INFO system_info;
+    GetSystemInfo(&system_info);
+    return system_info.dwNumberOfProcessors;    
+}
+
+Pid os_spawn_thread(int (*procedure)(void *), void *argument) {
+    return CreateThread(NULL, 0, procedure, argument, 0, NULL);
+}
+
+void os_join_thread(Pid pid) {
+    WaitForSingleObject(pid, INFINITE);
+}

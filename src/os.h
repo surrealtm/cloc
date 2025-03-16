@@ -50,3 +50,7 @@ OS_Path_Kind os_resolve_path_kind(char *path);
 File_Iterator find_first_file(struct Arena *arena, char *directory_path);
 void find_next_file(struct Arena *arena, File_Iterator *iterator);
 void close_file_iterator(File_Iterator *iterator);
+
+s64 os_get_hardware_thread_count();
+Pid os_spawn_thread(int (*procedure)(void *), void *argument);
+void os_join_thread(Pid pid);

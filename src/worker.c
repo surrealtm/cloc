@@ -1,3 +1,3 @@
-void worker_thread(Worker *worker) {
-
+int worker_thread(Worker *worker) {
+    return 0;
 }
