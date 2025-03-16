@@ -9,6 +9,7 @@ typedef struct Arena {
 
 void create_arena(Arena *arena, s64 reserved);
 void *push_arena(Arena *arena, s64 bytes);
+char *push_string(Arena *arena, char *input);
 void destroy_arena(Arena *arena);
 
 typedef struct File {
