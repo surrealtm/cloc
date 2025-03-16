@@ -8,6 +8,7 @@ typedef enum OS_Path_Kind {
 
 #if WIN32
 # include <Windows.h>
+# include <psapi.h>
 
 # define PRIu64 "llu"
 # define PRId64 "lld"
@@ -46,6 +47,7 @@ typedef struct File_Iterator {
 #endif
 
 OS_Path_Kind os_resolve_path_kind(char *path);
+char *os_make_absolute_path(struct Arena *arena, char *path);
 
 File_Iterator find_first_file(struct Arena *arena, char *directory_path);
 void find_next_file(struct Arena *arena, File_Iterator *iterator);
@@ -59,3 +61,5 @@ typedef s64 Hardware_Time;
 
 Hardware_Time os_get_hardware_time();
 f64 os_convert_hardware_time_to_seconds(Hardware_Time delta);
+
+s64 os_get_working_set_size();

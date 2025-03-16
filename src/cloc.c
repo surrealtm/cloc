@@ -73,6 +73,14 @@ void append_string(String_Builder *builder, const char *data) {
     memcpy(pointer, data, length);
 }
 
+void append_string_with_max_length(String_Builder *builder, const char *data, s64 max_length) {
+    s64 actual_length = strlen(data);
+    s64 length    = min(max_length, actual_length);
+    char *pointer = push_string_builder(builder, length);
+    s64 offset    = max(actual_length - max_length, 0);
+    memcpy(pointer, &data[offset], length);    
+}
+
 void append_char(String_Builder *builder, char data) {
     char *pointer = push_string_builder(builder, 1);
     *pointer = data;
@@ -111,6 +119,11 @@ void print_string_builder_as_line(String_Builder *builder) {
     printf("%.*s\n", (int) builder->size_in_characters, builder->pointer);
 }
 
+char *finish_string_builder(String_Builder *builder) {
+    append_char(builder, 0);
+    return builder->pointer;
+}
+
 
 
 /* ----------------------------------------------- Entry Point ----------------------------------------------- */
@@ -119,12 +132,33 @@ void combine_stats(Stats *dst, Stats *src) {
     dst->blank   += src->blank;
     dst->comment += src->comment;
     dst->code    += src->code;
+    dst->file_count += src->file_count;
+}
+
+static
+char *combine_file_paths(Cloc *cloc, char *directory_path, char *file_path) {
+    s64 directory_path_length = strlen(directory_path);
+
+    if(directory_path_length == 0) return file_path;
+    
+    String_Builder builder;
+    create_string_builder(&builder, &cloc->arena);
+    append_string(&builder, directory_path);
+    if(directory_path[directory_path_length - 1] != '/' && directory_path[directory_path_length - 1] != '\\')
+        append_char(&builder, '/');
+    append_string(&builder, file_path);
+    
+    return finish_string_builder(&builder);
 }
 
 void register_file_to_parse(Cloc *cloc, char *file_path) {
     File *entry      = push_arena(&cloc->arena, sizeof(File));
     entry->next      = cloc->first_file;
-    entry->file_path = file_path;
+    entry->file_path = os_make_absolute_path(&cloc->arena, file_path);
+    entry->stats.blank      = 0;
+    entry->stats.comment    = 0;
+    entry->stats.code       = 0;
+    entry->stats.file_count = 1;
     cloc->first_file = entry;
     cloc->next_file  = entry;
     ++cloc->file_count;
@@ -137,9 +171,9 @@ void register_directory_to_parse(Cloc *cloc, char *directory_path) {
         if(strcmp(iterator.path, ".") == 0 || strcmp(iterator.path, "..") == 0) {
             // Ignore these paths
         } else if(iterator.kind == OS_PATH_Is_Directory) {
-            register_directory_to_parse(cloc, iterator.path);
+            register_directory_to_parse(cloc, combine_file_paths(cloc, directory_path, iterator.path));
         } else if(iterator.kind == OS_PATH_Is_File) {
-            register_file_to_parse(cloc, iterator.path);
+            register_file_to_parse(cloc, combine_file_paths(cloc, directory_path, iterator.path));
         }
 
         find_next_file(&cloc->arena, &iterator);
@@ -202,7 +236,7 @@ static
 void print_table_entry_line(Cloc *cloc, const char *ident, Stats stats, b8 include_file_count) {
     String_Builder builder;
     create_string_builder(&builder, &cloc->arena);
-    append_string(&builder, ident);
+    append_string_with_max_length(&builder, ident, (include_file_count ? FILE_COUNT_COLUMN_OFFSET : EMPTY_LINES_COLUMN_OFFSET) - 3);
     if(include_file_count)
         append_right_justified_integer_at_offset(&builder, stats.file_count,    ' ', FILE_COUNT_COLUMN_OFFSET);
     append_right_justified_integer_at_offset(&builder, stats.blank,         ' ', EMPTY_LINES_COLUMN_OFFSET);
@@ -227,18 +261,20 @@ int main(int argc, char *argv[]) {
         for(int i = 1; i < argc; ++i) {
             char *argument = argv[i];
 
+            // @Incomplete: Normalize the input paths
+
             if(argument[0] != '-') {
                 //
                 // Register new files to parse
                 //
                 OS_Path_Kind path_kind = os_resolve_path_kind(argument);
                 switch(path_kind) {
-                case OS_PATH_Is_Directory:
-                    register_directory_to_parse(&cloc, argument);
-                    break;
-
                 case OS_PATH_Is_File:
                     register_file_to_parse(&cloc, argument);
+                    break;
+
+                case OS_PATH_Is_Directory:
+                    register_directory_to_parse(&cloc, argument);
                     break;
 
                 case OS_PATH_Non_Existent:
@@ -287,7 +323,7 @@ int main(int argc, char *argv[]) {
         print_separator_line(&cloc, CLOC_VERSION_STRING);
         print_table_header_line(&cloc);
         print_separator_line(&cloc, "");
-
+        
         Stats sum_stats = { 0 };
         
         switch(cloc.output_mode) {
@@ -305,7 +341,6 @@ int main(int argc, char *argv[]) {
             for(File *file = cloc.first_file; file != NULL; file = file->next) {
                 combine_stats(&sum_stats, &file->stats);
                 combine_stats(&languages[file->language], &file->stats);
-                languages[file->language].file_count += 1;
             }
 
             for(s64 i = 0; i < LANGUAGE_COUNT; ++i) {
@@ -315,13 +350,15 @@ int main(int argc, char *argv[]) {
         } break;
         }
 
-        print_separator_line(&cloc, "");
-
-        print_table_entry_line(&cloc, "SUM:", sum_stats, cloc.output_mode != OUTPUT_By_File);
+        if(sum_stats.file_count > 1) {
+            print_separator_line(&cloc, "");
+            print_table_entry_line(&cloc, "SUM:", sum_stats, cloc.output_mode != OUTPUT_By_File);
+        }
         
         Hardware_Time end = os_get_hardware_time();
-        f64 seconds = os_convert_hardware_time_to_seconds(end - start);
-        print_separator_line(&cloc, aprint(&cloc.arena, "%.2fs", seconds));
+        f64 seconds   = os_convert_hardware_time_to_seconds(end - start);
+        f64 megabytes = os_get_working_set_size() / 1000000;
+        print_separator_line(&cloc, aprint(&cloc.arena, "%.2fs / %.1fmb", seconds, megabytes));
     }
 
     return cloc.cli_valid ? 0 : -1;

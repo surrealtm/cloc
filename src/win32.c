@@ -10,6 +10,19 @@ OS_Path_Kind os_resolve_path_kind(char *path) {
     }
 }
 
+char *os_make_absolute_path(Arena *arena, char *relative_path) {
+    // GetFullPathNameA requires enough space for a cstring (meaning: include space for the null terminator).
+    // Otherwise, it will just complain and not write the path properly.
+    // Therefore, we must always allocate space for the null-terminator, and then exclude that from the actual
+    // string content.
+	u32 buffer_size = GetFullPathNameA(relative_path, 0, NULL, NULL);
+    char *absolute_path = push_arena(arena, buffer_size + 1);
+    GetFullPathNameA(relative_path, buffer_size, absolute_path, NULL);
+    return absolute_path;
+}
+
+
+
 File_Iterator find_first_file(Arena *arena, char *directory_path) {
     WIN32_FIND_DATAA file_data;
 
@@ -81,4 +94,14 @@ f64 os_convert_hardware_time_to_seconds(Hardware_Time delta) {
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);
     return (f64) delta / (f64) frequency.QuadPart;
+}
+
+
+
+s64 os_get_working_set_size() {
+    PROCESS_MEMORY_COUNTERS_EX counters = { 0 };
+    if(GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *) &counters, sizeof(counters)))
+        return counters.PrivateUsage;
+    else
+        return 0;
 }

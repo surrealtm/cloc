@@ -27,12 +27,14 @@ typedef struct String_Builder {
 
 void create_string_builder(String_Builder *builder, Arena *arena);
 void append_string(String_Builder *builder, const char *data);
+void append_string_with_max_length(String_Builder *builder, const char *data, s64 max_length);
 void append_right_justified_string_at_offset(String_Builder *builder, const char *string, char pad, s64 offset);
 void append_right_justified_integer_at_offset(String_Builder *builder, s64 integer, char pad, s64 offset);
 void append_char(String_Builder *builder, char data);
 void append_repeated_char(String_Builder *builder, char data, s64 n);
 void print_string_builder(String_Builder *builder);
 void print_string_builder_as_line(String_Builder *builder);
+char *finish_string_builder(String_Builder *builder);
 
 typedef enum Language {
     LANGUAGE_C,
