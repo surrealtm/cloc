@@ -19,7 +19,7 @@ if "%release%"=="1" set debug=0   && echo [Release Mode]
 if not exist bin mkdir bin
 
 :: --- Compile Line Definitions
-set CL_COMMON=  ..\\src\\cloc.c /nologo /FC /Z7 /link /OUT:cloc.exe
+set CL_COMMON=  ..\\src\\cloc.c /nologo /FC /Z7 /DWIN32 /link /OUT:cloc.exe
 set CL_DEBUG=   cl /Od /Ob1 %CL_COMMON%
 set CL_RELEASE= cl /O2 %CL_COMMON%
 
