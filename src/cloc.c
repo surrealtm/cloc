@@ -51,6 +51,7 @@ void destroy_arena(Arena *arena) {
 /* ---------------------------------------------- String Builder ---------------------------------------------- */
 
 #define aprint(arena, format, ...) push_arena(arena, sprintf((arena)->base + (arena)->committed, format, ##__VA_ARGS__) + 1)
+#define sprint(builder, format, ...) push_string_builder(builder, sprintf((builder)->arena->base + (builder)->arena->committed, format, ##__VA_ARGS__))
 
 static
 char *push_string_builder(String_Builder *builder, s64 characters) {
@@ -82,6 +83,26 @@ void append_repeated_char(String_Builder *builder, char data, s64 n) {
     memset(pointer, data, n);
 }
 
+void append_right_justified_string_at_offset(String_Builder *builder, const char *string, char pad, s64 offset) {
+    s64 string_length = strlen(string);
+
+    while(builder->size_in_characters < offset - string_length) {
+        append_char(builder, pad);
+    }
+
+    append_string(builder, string);
+}
+
+void append_right_justified_integer_at_offset(String_Builder *builder, s64 integer, char pad, s64 offset) {
+    s64 string_length = snprintf(NULL, 0, "%" PRId64, integer);
+
+    while(builder->size_in_characters < offset - string_length) {
+        append_char(builder, pad);
+    }
+
+    sprint(builder, "%" PRId64, integer);
+}
+
 void print_string_builder(String_Builder *builder) {
     printf("%.*s", (int) builder->size_in_characters, builder->pointer);
 }
@@ -93,6 +114,12 @@ void print_string_builder_as_line(String_Builder *builder) {
 
 
 /* ----------------------------------------------- Entry Point ----------------------------------------------- */
+
+void combine_stats(Stats *dst, Stats *src) {
+    dst->blank   += src->blank;
+    dst->comment += src->comment;
+    dst->code    += src->code;
+}
 
 void register_file_to_parse(Cloc *cloc, char *file_path) {
     File *entry      = push_arena(&cloc->arena, sizeof(File));
@@ -121,25 +148,67 @@ void register_directory_to_parse(Cloc *cloc, char *directory_path) {
 
 static
 void print_separator_line(Cloc *cloc, const char *content) {
+    const char DELIMITER_CHAR = '-';
+
+    s64 content_length = strlen(content);
+    if(content_length > 0) {
+        String_Builder builder;
+        create_string_builder(&builder, &cloc->arena);
+    
+        s64 total_stars = (OUTPUT_LINE_WIDTH - content_length - 2);
+        s64 lhs_stars = total_stars / 2;
+        s64 rhs_stars = total_stars / 2 + total_stars % 2;
+
+        append_repeated_char(&builder, DELIMITER_CHAR, lhs_stars);
+        append_char(&builder, ' ');
+        append_string(&builder, content);
+        append_char(&builder, ' ');
+        append_repeated_char(&builder, DELIMITER_CHAR, rhs_stars);
+    
+        print_string_builder_as_line(&builder);
+    } else {
+        char line[OUTPUT_LINE_WIDTH];
+        memset(line, DELIMITER_CHAR, sizeof(line));
+        printf("%.*s\n", OUTPUT_LINE_WIDTH, line);
+    }
+}
+
+static
+void print_table_header_line(Cloc *cloc) {
     String_Builder builder;
     create_string_builder(&builder, &cloc->arena);
 
-    s64 total_stars = (OUTPUT_LINE_WIDTH - strlen(content) - 2);
-    s64 lhs_stars = total_stars / 2;
-    s64 rhs_stars = total_stars / 2 + total_stars % 2;
+    switch(cloc->output_mode) {
+    case OUTPUT_By_File:
+        append_string(&builder, "File");
+        append_right_justified_string_at_offset(&builder, "Empty",   ' ', EMPTY_LINES_COLUMN_OFFSET);
+        append_right_justified_string_at_offset(&builder, "Comment", ' ', COMMENT_LINES_COLUMN_OFFSET);
+        append_right_justified_string_at_offset(&builder, "Code",    ' ', CODE_LINES_COLUMN_OFFSET);
+        break;
 
-    append_repeated_char(&builder, '*', lhs_stars);
-    append_char(&builder, ' ');
-    append_string(&builder, content);
-    append_char(&builder, ' ');
-    append_repeated_char(&builder, '*', rhs_stars);
-    
+    case OUTPUT_By_Language:
+        append_string(&builder, "Language");
+        append_right_justified_string_at_offset(&builder, "Files",    ' ', FILE_COUNT_COLUMN_OFFSET);
+        append_right_justified_string_at_offset(&builder, "Empty",    ' ', EMPTY_LINES_COLUMN_OFFSET);
+        append_right_justified_string_at_offset(&builder, "Comment",  ' ', COMMENT_LINES_COLUMN_OFFSET);
+        append_right_justified_string_at_offset(&builder, "Code",     ' ', CODE_LINES_COLUMN_OFFSET);
+        break;
+    }
+
     print_string_builder_as_line(&builder);
 }
 
 static
-void print_output_line(Cloc *cloc, char *identifier, s64 lines) {
-    
+void print_table_entry_line(Cloc *cloc, const char *ident, Stats stats, b8 include_file_count) {
+    String_Builder builder;
+    create_string_builder(&builder, &cloc->arena);
+    append_string(&builder, ident);
+    if(include_file_count)
+        append_right_justified_integer_at_offset(&builder, stats.file_count,    ' ', FILE_COUNT_COLUMN_OFFSET);
+    append_right_justified_integer_at_offset(&builder, stats.blank,         ' ', EMPTY_LINES_COLUMN_OFFSET);
+    append_right_justified_integer_at_offset(&builder, stats.comment,       ' ', COMMENT_LINES_COLUMN_OFFSET);
+    append_right_justified_integer_at_offset(&builder, stats.code,          ' ', CODE_LINES_COLUMN_OFFSET);
+    print_string_builder_as_line(&builder);    
 }
 
 int main(int argc, char *argv[]) {
@@ -153,7 +222,7 @@ int main(int argc, char *argv[]) {
     
     {
         cloc.cli_valid = true;
-        cloc.output_mode = OUTPUT_Total;
+        cloc.output_mode = OUTPUT_By_Language;
         
         for(int i = 1; i < argc; ++i) {
             char *argument = argv[i];
@@ -177,6 +246,10 @@ int main(int argc, char *argv[]) {
                     cloc.cli_valid = false;
                     break;
                 }
+            } else if(strcmp(argument, "--by-lang") == 0) {
+                cloc.output_mode = OUTPUT_By_Language;
+            } else if(strcmp(argument, "--by-file") == 0) {
+                cloc.output_mode = OUTPUT_By_File;
             } else {
                 printf("[ERROR]: Unrecognized command line option '%s'.\n", argument);
                 cloc.cli_valid = false;
@@ -212,19 +285,40 @@ int main(int argc, char *argv[]) {
         // Finalize the result
         //
         print_separator_line(&cloc, CLOC_VERSION_STRING);
+        print_table_header_line(&cloc);
+        print_separator_line(&cloc, "");
 
+        Stats sum_stats = { 0 };
+        
         switch(cloc.output_mode) {
         case OUTPUT_By_File: {
             for(File *file = cloc.first_file; file != NULL; file = file->next) {
-                printf(" > %s: %" PRId64 " lines\n", file->file_path, file->lines);
+                print_table_entry_line(&cloc, file->file_path, file->stats, false);
+                combine_stats(&sum_stats, &file->stats);
             }
         } break;
 
-        case OUTPUT_Total: {
-            
+        case OUTPUT_By_Language: {
+            Stats languages[LANGUAGE_COUNT];
+            memset(&languages, 0, sizeof(languages));
+
+            for(File *file = cloc.first_file; file != NULL; file = file->next) {
+                combine_stats(&sum_stats, &file->stats);
+                combine_stats(&languages[file->language], &file->stats);
+                languages[file->language].file_count += 1;
+            }
+
+            for(s64 i = 0; i < LANGUAGE_COUNT; ++i) {
+                if(languages[i].file_count > 0)
+                    print_table_entry_line(&cloc, LANGUAGE_STRINGS[i], languages[i], true);
+            }
         } break;
         }
 
+        print_separator_line(&cloc, "");
+
+        print_table_entry_line(&cloc, "SUM:", sum_stats, cloc.output_mode != OUTPUT_By_File);
+        
         Hardware_Time end = os_get_hardware_time();
         f64 seconds = os_convert_hardware_time_to_seconds(end - start);
         print_separator_line(&cloc, aprint(&cloc.arena, "%.2fs", seconds));

@@ -2,6 +2,12 @@
 #define OUTPUT_LINE_WIDTH 80
 #define CLOC_VERSION_STRING "cloc v0.1"
 
+
+#define FILE_COUNT_COLUMN_OFFSET    30
+#define EMPTY_LINES_COLUMN_OFFSET   50
+#define COMMENT_LINES_COLUMN_OFFSET 65
+#define CODE_LINES_COLUMN_OFFSET    80
+
 typedef struct Arena {
     char *base;
     s64 reserved;
@@ -21,21 +27,39 @@ typedef struct String_Builder {
 
 void create_string_builder(String_Builder *builder, Arena *arena);
 void append_string(String_Builder *builder, const char *data);
+void append_right_justified_string_at_offset(String_Builder *builder, const char *string, char pad, s64 offset);
+void append_right_justified_integer_at_offset(String_Builder *builder, s64 integer, char pad, s64 offset);
 void append_char(String_Builder *builder, char data);
 void append_repeated_char(String_Builder *builder, char data, s64 n);
 void print_string_builder(String_Builder *builder);
 void print_string_builder_as_line(String_Builder *builder);
 
+typedef enum Language {
+    LANGUAGE_C,
+    LANGUAGE_Cpp,
+    LANGUAGE_Jai,
+    LANGUAGE_COUNT,
+} Language;
+
+const char *LANGUAGE_STRINGS[LANGUAGE_COUNT] = { "C", "C++", "Jai" };
+
 typedef enum Output_Mode {
     OUTPUT_By_File,
-    OUTPUT_Total,
+    OUTPUT_By_Language,
 } Output_Mode;
+
+typedef struct Stats {
+    s64 blank;
+    s64 comment;
+    s64 code;
+    s64 file_count;
+} Stats;
 
 typedef struct File {
     struct File *next;
     char *file_path;
-
-    s64 lines;
+    Language language;
+    Stats stats;
 } File;
 
 typedef struct Cloc {
