@@ -72,7 +72,8 @@ typedef struct Cloc {
     b8 cli_valid;
 
     Output_Mode output_mode;
-
+    b8 no_jobs;
+    
     // Over all outputted line table entries, we find the common prefix that we can then omit in the output table.
     // This avoids having very long paths when all the files are in the same directory.
     const char *common_prefix;

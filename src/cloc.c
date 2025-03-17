@@ -16,6 +16,21 @@
 # include "win32.c"
 #endif
 
+typedef struct File_Extension_Map {
+    const char *extension;
+    Language language;
+} File_Extension_Map;
+
+static File_Extension_Map FILE_EXTENSION_MAP[] = {
+    { "c", LANGUAGE_C },
+    { "h", LANGUAGE_C },
+    { "cpp", LANGUAGE_Cpp },
+    { "hpp", LANGUAGE_Cpp },
+    { "inl", LANGUAGE_Cpp },
+    { "jai", LANGUAGE_Jai },
+};
+
+const s64 FILE_EXTENSION_MAP_SIZE = sizeof(FILE_EXTENSION_MAP) / sizeof(FILE_EXTENSION_MAP[0]);
 
 /* -------------------------------------------------- Arena -------------------------------------------------- */
 
@@ -187,16 +202,12 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
     char *file_extension = find_file_extension(file_path);
     if(!file_extension) return; // Files without a file extension are unsupported
 
-    Language language;
+    Language language = LANGUAGE_COUNT;
 
-    if(strcmp(file_extension, "c") == 0 || strcmp(file_extension, "h") == 0) {
-        language = LANGUAGE_C;
-    } else if(strcmp(file_extension, "cpp") == 0 || strcmp(file_extension, "hpp") == 0) {
-        language = LANGUAGE_Cpp;
-    } else if(strcmp(file_extension, "jai") == 0) {
-        language = LANGUAGE_Jai;
-    } else {
-        language = LANGUAGE_COUNT;
+    for(s64 i = 0; i < FILE_EXTENSION_MAP_SIZE && language == LANGUAGE_COUNT; ++i) {
+        if(strcmp(FILE_EXTENSION_MAP[i].extension, file_extension) == 0) {
+            language = FILE_EXTENSION_MAP[i].language;
+        }
     }
 
     if(language == LANGUAGE_COUNT) return; // Unrecognized language, ignore
@@ -368,8 +379,9 @@ int main(int argc, char *argv[]) {
     create_arena(&cloc.arena, 1024 * 1024);
     
     {
-        cloc.cli_valid = true;
+        cloc.cli_valid   = true;
         cloc.output_mode = OUTPUT_By_Language;
+        cloc.no_jobs     = false;
         
         for(int i = 1; i < argc; ++i) {
             char *argument = argv[i];
@@ -397,6 +409,8 @@ int main(int argc, char *argv[]) {
                 cloc.output_mode = OUTPUT_By_Language;
             } else if(strcmp(argument, "--by-file") == 0) {
                 cloc.output_mode = OUTPUT_By_File;
+            } else if(strcmp(argument, "--no-jobs") == 0) {
+                cloc.no_jobs = true;
             } else {
                 printf("[ERROR]: Unrecognized command line option '%s'.\n", argument);
                 cloc.cli_valid = false;
@@ -414,7 +428,7 @@ int main(int argc, char *argv[]) {
         // Set up and spawn the thread workers
         //
         s64 cpu_cores = os_get_hardware_thread_count();
-        cloc.active_workers = min(cpu_cores, cloc.file_count); // nocheckin
+        cloc.active_workers = cloc.no_jobs ? 1 : min(cpu_cores, cloc.file_count);
         
         for(int i = 0; i < cloc.active_workers; ++i) {
             cloc.workers[i].cloc = &cloc;
