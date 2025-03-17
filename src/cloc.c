@@ -152,6 +152,9 @@ char *combine_file_paths(Cloc *cloc, char *directory_path, char *file_path) {
 }
 
 void register_file_to_parse(Cloc *cloc, char *file_path) {
+    // @Incomplete: Ignore file paths with unrecognized extensions
+    // @Incomplete: Set the language depending on the file extension
+    
     File *entry      = push_arena(&cloc->arena, sizeof(File));
     entry->next      = cloc->first_file;
     entry->file_path = os_make_absolute_path(&cloc->arena, file_path);
@@ -162,6 +165,32 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
     cloc->first_file = entry;
     cloc->next_file  = entry;
     ++cloc->file_count;
+
+    if(cloc->common_prefix) {
+        //
+        // Find the common prefix between this new file and the stored prefix.
+        // If this new file doesn't share the complete stored prefix, we shorten the stored prefix
+        // until all files can share this prefix again.
+        //
+        s64 file_path_length = strlen(entry->file_path);
+        s64 max_length = min(cloc->common_prefix_length, file_path_length);
+        s64 index = 0;
+        
+        while(index < max_length && entry->file_path[index] == cloc->common_prefix[index]) {
+            if(entry->file_path[index] == '\\') {
+                cloc->common_prefix_length = index + 1;
+            } else if(entry->file_path[index] == '/') {
+                cloc->common_prefix_length = index + 1;
+            }
+            ++index;
+        }
+    } else {
+        cloc->common_prefix = entry->file_path;
+        cloc->common_prefix_length = strlen(entry->file_path);
+        while(cloc->common_prefix_length > 0 && cloc->common_prefix[cloc->common_prefix_length - 1] != '/' && cloc->common_prefix[cloc->common_prefix_length - 1] != '\\') {
+            --cloc->common_prefix_length;
+        }
+    }
 }
 
 void register_directory_to_parse(Cloc *cloc, char *directory_path) {
@@ -298,6 +327,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    printf("Prefix: '%.*s'\n", cloc.common_prefix_length, cloc.common_prefix);
+    
     if(cloc.cli_valid) {
         //
         // Set up and spawn the thread workers
@@ -326,10 +357,12 @@ int main(int argc, char *argv[]) {
         
         Stats sum_stats = { 0 };
         
+        // @Incomplete: Sort the results by their code line count
+
         switch(cloc.output_mode) {
         case OUTPUT_By_File: {
             for(File *file = cloc.first_file; file != NULL; file = file->next) {
-                print_table_entry_line(&cloc, file->file_path, file->stats, false);
+                print_table_entry_line(&cloc, &file->file_path[cloc.common_prefix_length], file->stats, false);
                 combine_stats(&sum_stats, &file->stats);
             }
         } break;
@@ -349,7 +382,7 @@ int main(int argc, char *argv[]) {
             }
         } break;
         }
-
+        
         if(sum_stats.file_count > 1) {
             print_separator_line(&cloc, "");
             print_table_entry_line(&cloc, "SUM:", sum_stats, cloc.output_mode != OUTPUT_By_File);

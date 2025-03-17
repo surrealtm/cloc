@@ -70,6 +70,11 @@ typedef struct Cloc {
     b8 cli_valid;
 
     Output_Mode output_mode;
+
+    // Over all registered files, we find the common prefix that we can then omit in the output table.
+    // This avoids having very long paths when all the files are in the same directory.
+    char *common_prefix;
+    s64 common_prefix_length;
     
     File *first_file;
     File *next_file;
