@@ -82,6 +82,10 @@ void os_join_thread(Pid pid) {
     WaitForSingleObject(pid, INFINITE);
 }
 
+void *os_compare_and_swap(void *volatile *dst, void *exchange, void *comparand) {
+    return InterlockedCompareExchangePointer(dst, exchange, comparand);
+}
+
 
 
 Hardware_Time os_get_hardware_time() {
@@ -105,3 +109,9 @@ s64 os_get_working_set_size() {
     else
         return 0;
 }
+
+void os_sleep(f64 seconds) {
+    DWORD milliseconds = (DWORD) floor(seconds * 1000.0);
+    Sleep(milliseconds);
+}
+

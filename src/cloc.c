@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <math.h>
 
 // --- Local Headers ---
 #include "os.h"
@@ -126,8 +127,31 @@ char *finish_string_builder(String_Builder *builder) {
 
 
 
+/* ----------------------------------------------- Cloc Helpers ----------------------------------------------- */
+
+File *get_next_file_to_parse(Cloc *cloc) {
+#if USE_CAS
+    File *current;
+
+    do {
+        current  = cloc->next_file;
+    } while(current != NULL && current != os_compare_and_swap(&cloc->next_file, current->next, current));
+
+    return current;
+#else
+    if(cloc->next_file == NULL) return NULL;
+
+    File *current = cloc->next_file;
+    cloc->next_file = current->next;
+    return current;
+#endif
+}
+
+
+
 /* ---------------------------------------------- Stats Handling ---------------------------------------------- */
 
+static
 void combine_stats(Stats *dst, Stats *src) {
     dst->blank   += src->blank;
     dst->comment += src->comment;
@@ -158,9 +182,8 @@ char *find_file_extension(char *file_path) {
     return index ? &file_path[index] : NULL;
 }
 
+static
 void register_file_to_parse(Cloc *cloc, char *file_path) {
-    // @Incomplete: Ignore file paths with unrecognized extensions
-    // @Incomplete: Set the language depending on the file extension
     char *file_extension = find_file_extension(file_path);
     if(!file_extension) return; // Files without a file extension are unsupported
 
@@ -185,13 +208,14 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
     entry->stats.ident      = entry->file_path;
     entry->stats.blank      = 0;
     entry->stats.comment    = 0;
-    entry->stats.code       = cloc->file_count; // nocheckin
+    entry->stats.code       = 0;
     entry->stats.file_count = 1;
     cloc->first_file = entry;
     cloc->next_file  = entry;
     ++cloc->file_count;
 }
 
+static
 void register_directory_to_parse(Cloc *cloc, char *directory_path) {
     File_Iterator iterator = find_first_file(&cloc->arena, directory_path);
     
@@ -350,8 +374,6 @@ int main(int argc, char *argv[]) {
         for(int i = 1; i < argc; ++i) {
             char *argument = argv[i];
 
-            // @Incomplete: Normalize the input paths
-
             if(argument[0] != '-') {
                 //
                 // Register new files to parse
@@ -392,7 +414,7 @@ int main(int argc, char *argv[]) {
         // Set up and spawn the thread workers
         //
         s64 cpu_cores = os_get_hardware_thread_count();
-        cloc.active_workers = min(cpu_cores, cloc.file_count); 
+        cloc.active_workers = min(cpu_cores, cloc.file_count); // nocheckin
         
         for(int i = 0; i < cloc.active_workers; ++i) {
             cloc.workers[i].cloc = &cloc;

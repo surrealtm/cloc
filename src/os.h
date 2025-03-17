@@ -56,6 +56,7 @@ void close_file_iterator(File_Iterator *iterator);
 s64 os_get_hardware_thread_count();
 Pid os_spawn_thread(int (*procedure)(void *), void *argument);
 void os_join_thread(Pid pid);
+void *os_compare_and_swap(void *volatile *dst, void *exchange, void *comparand);
 
 typedef s64 Hardware_Time;
 
@@ -63,3 +64,4 @@ Hardware_Time os_get_hardware_time();
 f64 os_convert_hardware_time_to_seconds(Hardware_Time delta);
 
 s64 os_get_working_set_size();
+void os_sleep(f64 seconds);

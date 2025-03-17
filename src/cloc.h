@@ -2,6 +2,7 @@
 #define OUTPUT_LINE_WIDTH 80
 #define CLOC_VERSION_STRING "cloc v0.1"
 
+#define USE_CAS true // IF THIS IS FALSE, WE ARE NOT THREAD-SAFE!
 
 #define FILE_COUNT_COLUMN_OFFSET    30
 #define EMPTY_LINES_COLUMN_OFFSET   50
@@ -85,4 +86,4 @@ typedef struct Cloc {
     s64 active_workers;
 } Cloc;
 
-void register_file_to_parse(Cloc *cloc, char *file_path);
+File *get_next_file_to_parse(Cloc *cloc);
