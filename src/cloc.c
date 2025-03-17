@@ -126,7 +126,7 @@ char *finish_string_builder(String_Builder *builder) {
 
 
 
-/* ----------------------------------------------- Entry Point ----------------------------------------------- */
+/* ---------------------------------------------- Stats Handling ---------------------------------------------- */
 
 void combine_stats(Stats *dst, Stats *src) {
     dst->blank   += src->blank;
@@ -151,46 +151,45 @@ char *combine_file_paths(Cloc *cloc, char *directory_path, char *file_path) {
     return finish_string_builder(&builder);
 }
 
+static
+char *find_file_extension(char *file_path) {
+    s64 index = strlen(file_path);
+    while(index > 0 && file_path[index - 1] != '.') --index;
+    return index ? &file_path[index] : NULL;
+}
+
 void register_file_to_parse(Cloc *cloc, char *file_path) {
     // @Incomplete: Ignore file paths with unrecognized extensions
     // @Incomplete: Set the language depending on the file extension
+    char *file_extension = find_file_extension(file_path);
+    if(!file_extension) return; // Files without a file extension are unsupported
+
+    Language language;
+
+    if(strcmp(file_extension, "c") == 0 || strcmp(file_extension, "h") == 0) {
+        language = LANGUAGE_C;
+    } else if(strcmp(file_extension, "cpp") == 0 || strcmp(file_extension, "hpp") == 0) {
+        language = LANGUAGE_Cpp;
+    } else if(strcmp(file_extension, "jai") == 0) {
+        language = LANGUAGE_Jai;
+    } else {
+        language = LANGUAGE_COUNT;
+    }
+
+    if(language == LANGUAGE_COUNT) return; // Unrecognized language, ignore
     
     File *entry      = push_arena(&cloc->arena, sizeof(File));
     entry->next      = cloc->first_file;
     entry->file_path = os_make_absolute_path(&cloc->arena, file_path);
+    entry->language  = language;
+    entry->stats.ident      = entry->file_path;
     entry->stats.blank      = 0;
     entry->stats.comment    = 0;
-    entry->stats.code       = 0;
+    entry->stats.code       = cloc->file_count; // nocheckin
     entry->stats.file_count = 1;
     cloc->first_file = entry;
     cloc->next_file  = entry;
     ++cloc->file_count;
-
-    if(cloc->common_prefix) {
-        //
-        // Find the common prefix between this new file and the stored prefix.
-        // If this new file doesn't share the complete stored prefix, we shorten the stored prefix
-        // until all files can share this prefix again.
-        //
-        s64 file_path_length = strlen(entry->file_path);
-        s64 max_length = min(cloc->common_prefix_length, file_path_length);
-        s64 index = 0;
-        
-        while(index < max_length && entry->file_path[index] == cloc->common_prefix[index]) {
-            if(entry->file_path[index] == '\\') {
-                cloc->common_prefix_length = index + 1;
-            } else if(entry->file_path[index] == '/') {
-                cloc->common_prefix_length = index + 1;
-            }
-            ++index;
-        }
-    } else {
-        cloc->common_prefix = entry->file_path;
-        cloc->common_prefix_length = strlen(entry->file_path);
-        while(cloc->common_prefix_length > 0 && cloc->common_prefix[cloc->common_prefix_length - 1] != '/' && cloc->common_prefix[cloc->common_prefix_length - 1] != '\\') {
-            --cloc->common_prefix_length;
-        }
-    }
 }
 
 void register_directory_to_parse(Cloc *cloc, char *directory_path) {
@@ -208,6 +207,10 @@ void register_directory_to_parse(Cloc *cloc, char *directory_path) {
         find_next_file(&cloc->arena, &iterator);
     }
 }
+
+
+
+/* ----------------------------------------------- Table Output ----------------------------------------------- */
 
 static
 void print_separator_line(Cloc *cloc, const char *content) {
@@ -262,17 +265,74 @@ void print_table_header_line(Cloc *cloc) {
 }
 
 static
-void print_table_entry_line(Cloc *cloc, const char *ident, Stats stats, b8 include_file_count) {
+void print_table_entry_line(Cloc *cloc, Stats *stats, b8 is_language_entries) {
     String_Builder builder;
     create_string_builder(&builder, &cloc->arena);
-    append_string_with_max_length(&builder, ident, (include_file_count ? FILE_COUNT_COLUMN_OFFSET : EMPTY_LINES_COLUMN_OFFSET) - 3);
-    if(include_file_count)
-        append_right_justified_integer_at_offset(&builder, stats.file_count,    ' ', FILE_COUNT_COLUMN_OFFSET);
-    append_right_justified_integer_at_offset(&builder, stats.blank,         ' ', EMPTY_LINES_COLUMN_OFFSET);
-    append_right_justified_integer_at_offset(&builder, stats.comment,       ' ', COMMENT_LINES_COLUMN_OFFSET);
-    append_right_justified_integer_at_offset(&builder, stats.code,          ' ', CODE_LINES_COLUMN_OFFSET);
+    append_string_with_max_length(&builder, &stats->ident[cloc->common_prefix_length], (is_language_entries ? FILE_COUNT_COLUMN_OFFSET : EMPTY_LINES_COLUMN_OFFSET) - 3);
+    if(is_language_entries)
+        append_right_justified_integer_at_offset(&builder, stats->file_count,    ' ', FILE_COUNT_COLUMN_OFFSET);
+    append_right_justified_integer_at_offset(&builder, stats->blank,         ' ', EMPTY_LINES_COLUMN_OFFSET);
+    append_right_justified_integer_at_offset(&builder, stats->comment,       ' ', COMMENT_LINES_COLUMN_OFFSET);
+    append_right_justified_integer_at_offset(&builder, stats->code,          ' ', CODE_LINES_COLUMN_OFFSET);
     print_string_builder_as_line(&builder);    
 }
+
+static
+void set_initial_common_prefix(Cloc *cloc, const char *ident) {
+    cloc->common_prefix = ident;
+    cloc->common_prefix_length = strlen(cloc->common_prefix);
+    while(cloc->common_prefix_length > 0 && cloc->common_prefix[cloc->common_prefix_length - 1] != '/' && cloc->common_prefix[cloc->common_prefix_length - 1] != '\\') {
+        --cloc->common_prefix_length;
+    }
+}
+
+static
+void adapt_common_prefix(Cloc *cloc, const char *ident) {
+    //
+    // Find the common prefix between this new file and the stored prefix.
+    // If this new file doesn't share the complete stored prefix, we shorten the stored prefix
+    // until all files can share this prefix again.
+    //
+    s64 file_path_length = strlen(ident);
+    s64 max_length = min(cloc->common_prefix_length, file_path_length);
+    s64 index = 0;
+        
+    while(index < max_length && ident[index] == cloc->common_prefix[index]) {
+        if(ident[index] == '\\') {
+            cloc->common_prefix_length = index + 1;
+        } else if(ident[index] == '/') {
+            cloc->common_prefix_length = index + 1;
+        }
+        ++index;
+    }
+}
+
+static
+void prepare_stats(Cloc *cloc, Stats *stats, s64 stat_count, b8 set_common_prefix) {
+    if(!stat_count) return;
+
+    for(s64 i = 0; i < stat_count; ++i) {
+        for(s64 j = i + 1; j < stat_count; ++j) {
+            if(stats[j].code > stats[i].code || (stats[j].code == stats[i].code && stats[j].file_count > stats[i].file_count)) {
+                Stats tmp = stats[i];
+                stats[i] = stats[j];
+                stats[j] = tmp;
+            }
+        }
+    }
+
+    if(set_common_prefix) {
+        set_initial_common_prefix(cloc, stats[0].ident);
+        
+        for(s64 i = 1; i < stat_count; ++i) {
+            adapt_common_prefix(cloc, stats[i].ident);
+        }
+    }
+}
+
+
+
+/* ----------------------------------------------- Entry Point ----------------------------------------------- */
 
 int main(int argc, char *argv[]) {
     Hardware_Time start = os_get_hardware_time();
@@ -326,8 +386,6 @@ int main(int argc, char *argv[]) {
             cloc.cli_valid = false;
         }
     }
-
-    printf("Prefix: '%.*s'\n", cloc.common_prefix_length, cloc.common_prefix);
     
     if(cloc.cli_valid) {
         //
@@ -356,36 +414,53 @@ int main(int argc, char *argv[]) {
         print_separator_line(&cloc, "");
         
         Stats sum_stats = { 0 };
-        
-        // @Incomplete: Sort the results by their code line count
+        sum_stats.ident = "SUM:";
 
         switch(cloc.output_mode) {
         case OUTPUT_By_File: {
+            Stats *sorted_stats = push_arena(&cloc.arena, cloc.file_count * sizeof(Stats));
+            memset(sorted_stats, 0, cloc.file_count * sizeof(Stats));
+
+            s64 index = 0;
             for(File *file = cloc.first_file; file != NULL; file = file->next) {
-                print_table_entry_line(&cloc, &file->file_path[cloc.common_prefix_length], file->stats, false);
                 combine_stats(&sum_stats, &file->stats);
+                sorted_stats[index] = file->stats;
+                ++index;
+            }
+
+            prepare_stats(&cloc, sorted_stats, cloc.file_count, true);
+            
+            for(s64 i = 0; i < cloc.file_count; ++i) {
+                print_table_entry_line(&cloc, &sorted_stats[i], false);
             }
         } break;
 
         case OUTPUT_By_Language: {
-            Stats languages[LANGUAGE_COUNT];
-            memset(&languages, 0, sizeof(languages));
+            Stats sorted_stats[LANGUAGE_COUNT];
+            memset(&sorted_stats, 0, LANGUAGE_COUNT * sizeof(Stats));
+
+            for(s64 i = 0; i < LANGUAGE_COUNT; ++i) {
+                sorted_stats[i].ident = LANGUAGE_STRINGS[i];
+            }
 
             for(File *file = cloc.first_file; file != NULL; file = file->next) {
                 combine_stats(&sum_stats, &file->stats);
-                combine_stats(&languages[file->language], &file->stats);
+                combine_stats(&sorted_stats[file->language], &file->stats);
             }
 
+            prepare_stats(&cloc, sorted_stats, LANGUAGE_COUNT, false);
+            
             for(s64 i = 0; i < LANGUAGE_COUNT; ++i) {
-                if(languages[i].file_count > 0)
-                    print_table_entry_line(&cloc, LANGUAGE_STRINGS[i], languages[i], true);
+                if(sorted_stats[i].file_count > 0) print_table_entry_line(&cloc, &sorted_stats[i], true);
             }
         } break;
         }
         
         if(sum_stats.file_count > 1) {
+            cloc.common_prefix = NULL;
+            cloc.common_prefix_length = 0;
             print_separator_line(&cloc, "");
-            print_table_entry_line(&cloc, "SUM:", sum_stats, cloc.output_mode != OUTPUT_By_File);
+            print_table_entry_line(&cloc, &sum_stats, cloc.output_mode != OUTPUT_By_File);
         }
         
         Hardware_Time end = os_get_hardware_time();
