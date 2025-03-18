@@ -35,6 +35,8 @@ typedef unsigned char b8;
 
 typedef HANDLE Pid;
 
+typedef HANDLE File_Handle;
+
 typedef struct File_Iterator {
     b8 valid;
     HANDLE native_handle;
@@ -48,6 +50,10 @@ typedef struct File_Iterator {
 
 OS_Path_Kind os_resolve_path_kind(char *path);
 char *os_make_absolute_path(struct Arena *arena, char *path);
+File_Handle os_open_file(char *path);
+s64 os_get_file_size(File_Handle);
+s64 os_read_file(File_Handle, char *dst, s64 offset, s64 size);
+void os_close_file(File_Handle);
 
 File_Iterator find_first_file(struct Arena *arena, char *directory_path);
 void find_next_file(struct Arena *arena, File_Iterator *iterator);

@@ -21,6 +21,28 @@ char *os_make_absolute_path(Arena *arena, char *relative_path) {
     return absolute_path;
 }
 
+File_Handle os_open_file(char *path) {
+    return CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+}
+
+s64 os_get_file_size(File_Handle handle) {
+    DWORD high;
+    DWORD low = GetFileSize(handle, &high);
+    return (s64) low | ((s64) high << 32);
+}
+
+s64 os_read_file(File_Handle handle, char *dst, s64 offset, s64 size) {
+    s32 distance_to_move_high = (s32) (offset >> 32);
+    SetFilePointer(handle, (s32) (offset & 0xffffffff), &distance_to_move_high, FILE_BEGIN);
+    s32 read;
+    ReadFile(handle, dst, size, &read, NULL);
+    return read;
+}
+
+void os_close_file(File_Handle handle) {
+    CloseHandle(handle);
+}
+
 
 
 File_Iterator find_first_file(Arena *arena, char *directory_path) {
