@@ -66,13 +66,64 @@ void c_eat_character(C_Parser *parser, char character) {
 static
 Line_Result c_finish_line(C_Parser *parser) {
     Line_Result result = parser->current_line;
-    parser->current_line = LINE_RESULT_Blank;
-    parser->inside_single_line_comment = false;
+    parser->current_line                     = LINE_RESULT_Blank;
+    parser->inside_single_line_comment       = false;
     parser->only_char_in_this_line_was_slash = false;
-    parser->previous_character = '\n';
+    parser->previous_character               = '\n';
     return result;
 }
 
+typedef struct Jai_Parser {
+    Line_Result current_line;
+    char previous_character;
+    b8 inside_single_line_comment;
+    s64 multiline_comment_depth;
+    b8 only_char_in_this_line_was_slash;
+} Jai_Parser;
+
+thread_local Jai_Parser jai_parser;
+
+static
+void jai_reset_parser(Jai_Parser *parser) {
+    parser->current_line                     = LINE_RESULT_Blank;
+    parser->previous_character               = 0;
+    parser->inside_single_line_comment       = false;
+    parser->multiline_comment_depth          = 0;
+    parser->only_char_in_this_line_was_slash = false;
+}
+
+static
+void jai_eat_character(Jai_Parser *parser, char character) {
+    if(character == '/' && parser->previous_character == '/') {
+        if(parser->current_line == LINE_RESULT_Blank || parser->only_char_in_this_line_was_slash) parser->current_line = LINE_RESULT_Comment; // If this line already contained code, then we count it as code and not comment
+        parser->inside_single_line_comment = true;
+    } else if(character == '*' && parser->previous_character == '/') {
+        if(parser->current_line == LINE_RESULT_Blank || parser->only_char_in_this_line_was_slash) parser->current_line = LINE_RESULT_Comment; // If this line already contained code, then we count it as code and not comment
+        ++parser->multiline_comment_depth;
+    } else if(character == '/' && parser->previous_character == '*') {
+        --parser->multiline_comment_depth;
+    } else if(character > 32 && !parser->inside_single_line_comment && !parser->multiline_comment_depth) {
+        // When encountering a '/', we don't know yet if this is code or the start of a comment.
+        // Therefore, for now we assume that this is code, and then if we encounter the start of a comment
+        // in the next character, we change from code to comment.
+        parser->only_char_in_this_line_was_slash = character == '/' && parser->current_line == LINE_RESULT_Blank;
+        parser->current_line = LINE_RESULT_Code;
+    } else if(character > 32 && parser->multiline_comment_depth && parser->current_line == LINE_RESULT_Blank) {
+        parser->current_line = LINE_RESULT_Comment;
+    }
+    
+    parser->previous_character = character;
+}
+
+static
+Line_Result jai_finish_line(Jai_Parser *parser) {
+    Line_Result result = parser->current_line;
+    parser->current_line                     = LINE_RESULT_Blank;
+    parser->inside_single_line_comment       = false;
+    parser->only_char_in_this_line_was_slash = false;
+    parser->previous_character               = '\n';
+    return result;
+}
 
 
 /* -------------------------------------------------- Worker -------------------------------------------------- */
@@ -94,9 +145,10 @@ int worker_thread(Worker *worker) {
     // Set up the thread local parser table
     //
     Parser PARSER_TABLE[LANGUAGE_COUNT] = {
-        { &c_parser, c_reset_parser, c_eat_character, c_finish_line },
-        { &c_parser, c_reset_parser, c_eat_character, c_finish_line },
-        { &c_parser, c_reset_parser, c_eat_character, c_finish_line },
+        { &c_parser, c_reset_parser, c_eat_character, c_finish_line }, // C
+        { &c_parser, c_reset_parser, c_eat_character, c_finish_line }, // C Header
+        { &c_parser, c_reset_parser, c_eat_character, c_finish_line }, // Cpp
+        { &jai_parser, jai_reset_parser, jai_eat_character, jai_finish_line }, // Jai
     };
 
     File *file;

@@ -39,12 +39,13 @@ char *finish_string_builder(String_Builder *builder);
 
 typedef enum Language {
     LANGUAGE_C,
+    LANGUAGE_C_Header,
     LANGUAGE_Cpp,
     LANGUAGE_Jai,
     LANGUAGE_COUNT,
 } Language;
 
-const char *LANGUAGE_STRINGS[LANGUAGE_COUNT] = { "C", "C++", "Jai" };
+const char *LANGUAGE_STRINGS[LANGUAGE_COUNT] = { "C", "C/Header", "C++", "Jai" };
 
 typedef enum Output_Mode {
     OUTPUT_By_File,

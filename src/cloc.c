@@ -23,7 +23,7 @@ typedef struct File_Extension_Map {
 
 static File_Extension_Map FILE_EXTENSION_MAP[] = {
     { "c", LANGUAGE_C },
-    { "h", LANGUAGE_C },
+    { "h", LANGUAGE_C_Header },
     { "cpp", LANGUAGE_Cpp },
     { "hpp", LANGUAGE_Cpp },
     { "inl", LANGUAGE_Cpp },
@@ -507,3 +507,12 @@ int main(int argc, char *argv[]) {
 
     return cloc.cli_valid ? 0 : -1;
 }
+
+
+/*
+ TODO:
+ - [ ] Port to linux
+ - [ ] Add a lines / second calculation
+ - [ ] Make a scratch arena for temporary file path conversion, so that hopefully we can cloc all of C:/source
+ - [ ] Implement an assembly parser
+*/
