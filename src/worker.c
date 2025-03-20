@@ -22,30 +22,70 @@ typedef struct Parser {
 /* ------------------------------------------ Parser Implementation ------------------------------------------ */
 
 typedef struct C_Parser {
-    b8 current_line_is_blank;
+    Line_Result current_line;
+    char previous_character;
+    b8 inside_single_line_comment;
     b8 inside_multiline_comment;
+    b8 only_char_in_this_line_was_slash;
 } C_Parser;
 
 thread_local C_Parser c_parser;
 
 static
 void c_reset_parser(C_Parser *parser) {
-    
+    parser->current_line               = LINE_RESULT_Blank;
+    parser->previous_character         = 0;
+    parser->inside_single_line_comment = false;
+    parser->inside_multiline_comment   = false;
+    parser->only_char_in_this_line_was_slash = false;
 }
 
 static
 void c_eat_character(C_Parser *parser, char character) {
-
+    if(character == '/' && parser->previous_character == '/') {
+        if(parser->current_line == LINE_RESULT_Blank || parser->only_char_in_this_line_was_slash) parser->current_line = LINE_RESULT_Comment; // If this line already contained code, then we count it as code and not comment
+        parser->inside_single_line_comment = true;
+    } else if(character == '*' && parser->previous_character == '/') {
+        if(parser->current_line == LINE_RESULT_Blank || parser->only_char_in_this_line_was_slash) parser->current_line = LINE_RESULT_Comment; // If this line already contained code, then we count it as code and not comment
+        parser->inside_multiline_comment = true;
+    } else if(character == '/' && parser->previous_character == '*') {
+        parser->inside_multiline_comment = false;
+    } else if(character > 32 && !parser->inside_single_line_comment && !parser->inside_multiline_comment) {
+        // When encountering a '/', we don't know yet if this is code or the start of a comment.
+        // Therefore, for now we assume that this is code, and then if we encounter the start of a comment
+        // in the next character, we change from code to comment.
+        parser->only_char_in_this_line_was_slash = character == '/' && parser->current_line == LINE_RESULT_Blank;
+        parser->current_line = LINE_RESULT_Code;
+    } else if(character > 32 && parser->inside_multiline_comment && parser->current_line == LINE_RESULT_Blank) {
+        parser->current_line = LINE_RESULT_Comment;
+    }
+    
+    parser->previous_character = character;
 }
 
 static
 Line_Result c_finish_line(C_Parser *parser) {
-    return LINE_RESULT_Code;
+    Line_Result result = parser->current_line;
+    parser->current_line = LINE_RESULT_Blank;
+    parser->inside_single_line_comment = false;
+    parser->only_char_in_this_line_was_slash = false;
+    parser->previous_character = '\n';
+    return result;
 }
 
 
 
 /* -------------------------------------------------- Worker -------------------------------------------------- */
+
+static inline
+void register_line(Worker *worker, File *file, Parser *parser) {
+    Line_Result result = parser->finish_line(parser->user_data);
+    switch(result) {
+    case LINE_RESULT_Blank:   ++file->stats.blank; break;
+    case LINE_RESULT_Comment: ++file->stats.comment; break;
+    case LINE_RESULT_Code:    ++file->stats.code; break;
+    }
+}
 
 int worker_thread(Worker *worker) {
     worker->file_buffer = malloc(FILE_BUFFER_SIZE);
@@ -74,38 +114,30 @@ int worker_thread(Worker *worker) {
 
         s64 file_size = os_get_file_size(handle);
         s64 offset_in_file = 0;
-    
+        s64 chunk_size = 0;
+        
         while(offset_in_file < file_size) {
             //
             // Handle one chunk of the file
             //
-            s64 chunk_size = min(FILE_BUFFER_SIZE, file_size - offset_in_file);
+            chunk_size = min(FILE_BUFFER_SIZE, file_size - offset_in_file);
             chunk_size = os_read_file(handle, worker->file_buffer, offset_in_file, chunk_size);
-
+            
             for(s64 i = 0; i < chunk_size; ++i) {
                 char character = worker->file_buffer[i];
 
                 switch(character) {
                 case '\r': break; // Ignore
-
-                case '\n': {
-                    Line_Result result = parser->finish_line(parser->user_data);
-                    switch(result) {
-                    case LINE_RESULT_Blank: ++file->stats.blank; break;
-                    case LINE_RESULT_Comment: ++file->stats.comment; break;
-                    case LINE_RESULT_Code: ++file->stats.code; break;
-                    }
-                } break;
-
-                default:
-                    parser->eat_character(parser->user_data, character);
-                    break;
+                case '\n': register_line(worker, file, parser); break;
+                default: parser->eat_character(parser->user_data, character); break;
                 }
             }
         
             offset_in_file += chunk_size;
         }
 
+        if(chunk_size > 0 && worker->file_buffer[chunk_size - 1] != '\n') register_line(worker, file, parser);
+        
         os_close_file(handle);
     }
     return 0;
