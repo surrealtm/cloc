@@ -6,14 +6,14 @@ cd "$(dirname "$0")"
 
 # --- Unpack arguments
 for arg in "$@"; do declare $arg='1'; done
-if [ -v debug ]; then release=0; echo "[Debug Mode]"; fi
-if [ -v release ]; then debug=0; echo "[Release Mode]"; fi
+if [ -v debug ];   then echo "[Debug Mode]"; fi
+if [ -v release ]; then echo "[Release Mode]"; fi
 
 # --- Prepare the outp0ut directories
 mkdir -p bin
 
 # --- Compile Line Definitions
-CLANG_COMMON="../src/cloc.c"
+CLANG_COMMON="../src/cloc.c -DLINUX -ocloc"
 CLANG_DEBUG="clang -O0 -g ${CLANG_COMMON}"
 CLANG_RELEASE="clang -O2 ${CLANG_COMMON}"
 
