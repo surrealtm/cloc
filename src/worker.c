@@ -145,14 +145,14 @@ int worker_thread(Worker *worker) {
     // Set up the thread local parser table
     //
     Parser PARSER_TABLE[LANGUAGE_COUNT] = {
-        { &c_parser, c_reset_parser, c_eat_character, c_finish_line }, // C
-        { &c_parser, c_reset_parser, c_eat_character, c_finish_line }, // C Header
-        { &c_parser, c_reset_parser, c_eat_character, c_finish_line }, // Cpp
-        { &jai_parser, jai_reset_parser, jai_eat_character, jai_finish_line }, // Jai
+        { &c_parser,   (Reset) &c_reset_parser,  (Eat_Character) c_eat_character,   (Finish_Line) c_finish_line }, // C
+        { &c_parser,   (Reset) &c_reset_parser,  (Eat_Character) c_eat_character,   (Finish_Line) c_finish_line }, // C Header
+        { &c_parser,   (Reset) &c_reset_parser,  (Eat_Character) c_eat_character,   (Finish_Line) c_finish_line }, // Cpp
+        { &jai_parser, (Reset) jai_reset_parser, (Eat_Character) jai_eat_character, (Finish_Line) jai_finish_line }, // Jai
     };
 
     File *file;
-    while(file = get_next_file_to_parse(worker->cloc)) {
+    while((file = get_next_file_to_parse(worker->cloc))) {
         //
         // Get the appropriate parser for this file
         //

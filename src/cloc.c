@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <string.h>
 
 // --- Local Headers ---
 #include "os.h"
@@ -14,6 +15,8 @@
 
 #if WIN32
 # include "win32.c"
+#elif POSIX
+# include "posix.c"
 #endif
 
 typedef struct File_Extension_Map {
@@ -150,7 +153,7 @@ File *get_next_file_to_parse(Cloc *cloc) {
 
     do {
         current  = cloc->next_file;
-    } while(current != NULL && current != os_compare_and_swap(&cloc->next_file, current->next, current));
+    } while(current != NULL && current != os_compare_and_swap((void *volatile *) &cloc->next_file, current->next, current));
 
     return current;
 #else
@@ -432,7 +435,7 @@ int main(int argc, char *argv[]) {
         
         for(int i = 0; i < cloc.active_workers; ++i) {
             cloc.workers[i].cloc = &cloc;
-            cloc.workers[i].pid = os_spawn_thread(worker_thread, &cloc.workers[i]);
+            cloc.workers[i].pid = os_spawn_thread((int(*)(void *)) worker_thread, &cloc.workers[i]);
         }
         
         //

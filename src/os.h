@@ -1,11 +1,5 @@
 struct Arena;
 
-typedef enum OS_Path_Kind {
-    OS_PATH_Non_Existent,
-    OS_PATH_Is_File,
-    OS_PATH_Is_Directory,
-} OS_Path_Kind;
-
 #if WIN32
 # include <Windows.h>
 # include <psapi.h>
@@ -13,7 +7,6 @@ typedef enum OS_Path_Kind {
 # define PRIu64 "llu"
 # define PRId64 "lld"
 # define PRIx64 "llx"
-# define FOUNDATION_LITTLE_ENDIAN true
 # define true 1
 # define false 0
 # define thread_local __declspec(thread)
@@ -34,19 +27,48 @@ typedef double f64;
 typedef unsigned char b8;
 
 typedef HANDLE Pid;
-
 typedef HANDLE File_Handle;
 
-typedef struct File_Iterator {
-    b8 valid;
-    HANDLE native_handle;
-    char *path;
-    OS_Path_Kind kind;
-} File_Iterator;
+#elif POSIX
+# include <linux/limits.h>
+
+# define PRIu64 "lu"
+# define PRId64 "ld"
+# define PRIx64 "lx"
+# define true 1
+# define false 0
+# define thread_local __thread
+
+typedef unsigned char   u8;
+typedef unsigned short u16;
+typedef unsigned int   u32;
+typedef unsigned long  u64;
+
+typedef signed char   s8;
+typedef signed short s16;
+typedef signed int   s32;
+typedef signed long  s64;
+
+typedef float  f32;
+typedef double f64;
+
+typedef unsigned char b8;
+
+typedef s64 Pid;
+typedef int File_Handle;
 
 #else
 # error "This platform is not supported."
 #endif
+
+#define min(lhs, rhs) ((lhs) < (rhs) ? (lhs) : (rhs))
+#define max(lhs, rhs) ((lhs) > (rhs) ? (lhs) : (rhs))
+
+typedef enum OS_Path_Kind {
+    OS_PATH_Non_Existent,
+    OS_PATH_Is_File,
+    OS_PATH_Is_Directory,
+} OS_Path_Kind;
 
 OS_Path_Kind os_resolve_path_kind(char *path);
 char *os_make_absolute_path(struct Arena *arena, char *path);
@@ -54,6 +76,13 @@ File_Handle os_open_file(char *path);
 s64 os_get_file_size(File_Handle);
 s64 os_read_file(File_Handle, char *dst, s64 offset, s64 size);
 void os_close_file(File_Handle);
+
+typedef struct File_Iterator {
+    b8 valid;
+    File_Handle native_handle;
+    char *path;
+    OS_Path_Kind kind;
+} File_Iterator;
 
 File_Iterator find_first_file(struct Arena *arena, char *directory_path);
 void find_next_file(struct Arena *arena, File_Iterator *iterator);

@@ -13,7 +13,7 @@ if [ -v release ]; then echo "[Release Mode]"; fi
 mkdir -p bin
 
 # --- Compile Line Definitions
-CLANG_COMMON="../src/cloc.c -DLINUX -ocloc"
+CLANG_COMMON="../src/cloc.c -DPOSIX -ocloc"
 CLANG_DEBUG="clang -O0 -g ${CLANG_COMMON}"
 CLANG_RELEASE="clang -O2 ${CLANG_COMMON}"
 
