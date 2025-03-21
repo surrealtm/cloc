@@ -231,15 +231,17 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
 
 static
 void register_directory_to_parse(Cloc *cloc, char *directory_path) {
-    File_Iterator iterator = find_first_file(&cloc->arena, directory_path);
+    char *resolved_path = os_make_absolute_path(&cloc->arena, directory_path); // Resolve any tricks in this path here to make our future easier.
+    
+    File_Iterator iterator = find_first_file(&cloc->arena, resolved_path);
     
     while(iterator.valid) {
         if(strcmp(iterator.path, ".") == 0 || strcmp(iterator.path, "..") == 0) {
             // Ignore these paths
         } else if(iterator.kind == OS_PATH_Is_Directory) {
-            register_directory_to_parse(cloc, combine_file_paths(cloc, directory_path, iterator.path));
+            register_directory_to_parse(cloc, combine_file_paths(cloc, resolved_path, iterator.path));
         } else if(iterator.kind == OS_PATH_Is_File) {
-            register_file_to_parse(cloc, combine_file_paths(cloc, directory_path, iterator.path));
+            register_file_to_parse(cloc, combine_file_paths(cloc, resolved_path, iterator.path));
         }
 
         find_next_file(&cloc->arena, &iterator);
@@ -514,7 +516,7 @@ int main(int argc, char *argv[]) {
 
 /*
  TODO:
- - [ ] Port to linux
+ - [x] Port to linux
  - [ ] Add a lines / second calculation
  - [ ] Make a scratch arena for temporary file path conversion, so that hopefully we can cloc all of C:/source
  - [ ] Implement an assembly parser

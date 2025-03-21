@@ -28,9 +28,16 @@ typedef unsigned char b8;
 
 typedef HANDLE Pid;
 typedef HANDLE File_Handle;
+typedef HANDLE File_Iterator_Handle;
 
 #elif POSIX
 # include <linux/limits.h>
+# include <sys/stat.h>
+# include <fcntl.h>
+# include <unistd.h>
+# include <dirent.h>
+# include <pthread.h>
+# include <sys/resource.h>
 
 # define PRIu64 "lu"
 # define PRId64 "ld"
@@ -54,8 +61,9 @@ typedef double f64;
 
 typedef unsigned char b8;
 
-typedef s64 Pid;
+typedef u64 Pid;
 typedef int File_Handle;
+typedef DIR *File_Iterator_Handle;
 
 #else
 # error "This platform is not supported."
@@ -73,13 +81,13 @@ typedef enum OS_Path_Kind {
 OS_Path_Kind os_resolve_path_kind(char *path);
 char *os_make_absolute_path(struct Arena *arena, char *path);
 File_Handle os_open_file(char *path);
-s64 os_get_file_size(File_Handle);
-s64 os_read_file(File_Handle, char *dst, s64 offset, s64 size);
-void os_close_file(File_Handle);
+s64 os_get_file_size(File_Handle handle);
+s64 os_read_file(File_Handle handle, char *dst, s64 offset, s64 size);
+void os_close_file(File_Handle handle);
 
 typedef struct File_Iterator {
     b8 valid;
-    File_Handle native_handle;
+    File_Iterator_Handle native_handle;
     char *path;
     OS_Path_Kind kind;
 } File_Iterator;
