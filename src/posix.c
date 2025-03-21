@@ -16,8 +16,7 @@ OS_Path_Kind os_resolve_path_kind(char *path) {
 }
 
 char *os_make_absolute_path(Arena *arena, char *path) {
-    char *pointer = realpath(path, posix_string_buffer);
-    return push_string(arena, pointer);
+    return push_string(arena, realpath(path, posix_string_buffer));
 }
 
 File_Handle os_open_file(char *path) {

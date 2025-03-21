@@ -18,6 +18,8 @@ typedef struct Arena {
 void create_arena(Arena *arena, s64 reserved);
 void *push_arena(Arena *arena, s64 bytes);
 char *push_string(Arena *arena, char *input);
+s64 mark_arena(Arena *arena);
+void reset_arena(Arena *arena, s64 mark);
 void destroy_arena(Arena *arena);
 
 typedef struct String_Builder {
@@ -68,7 +70,8 @@ typedef struct File {
 } File;
 
 typedef struct Cloc {
-    Arena arena;
+    Arena perm;
+    Arena scratch;
 
     b8 cli_valid;
 

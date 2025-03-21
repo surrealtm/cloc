@@ -58,6 +58,14 @@ char *push_string(Arena *arena, char *input) {
     return output;
 }
 
+s64 mark_arena(Arena *arena) {
+    return arena->committed;
+}
+
+void reset_arena(Arena *arena, s64 mark) {
+    arena->committed = mark;
+}
+
 void destroy_arena(Arena *arena) {
     free(arena->base);
     arena->base      = NULL;
@@ -184,7 +192,7 @@ char *combine_file_paths(Cloc *cloc, char *directory_path, char *file_path) {
     if(directory_path_length == 0) return file_path;
     
     String_Builder builder;
-    create_string_builder(&builder, &cloc->arena);
+    create_string_builder(&builder, &cloc->scratch);
     append_string(&builder, directory_path);
     if(directory_path[directory_path_length - 1] != '/' && directory_path[directory_path_length - 1] != '\\')
         append_char(&builder, '/');
@@ -215,9 +223,9 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
 
     if(language == LANGUAGE_COUNT) return; // Unrecognized language, ignore
     
-    File *entry      = push_arena(&cloc->arena, sizeof(File));
+    File *entry      = push_arena(&cloc->perm, sizeof(File));
     entry->next      = cloc->first_file;
-    entry->file_path = os_make_absolute_path(&cloc->arena, file_path);
+    entry->file_path = os_make_absolute_path(&cloc->perm, file_path);
     entry->language  = language;
     entry->stats.ident      = entry->file_path;
     entry->stats.blank      = 0;
@@ -231,9 +239,11 @@ void register_file_to_parse(Cloc *cloc, char *file_path) {
 
 static
 void register_directory_to_parse(Cloc *cloc, char *directory_path) {
-    char *resolved_path = os_make_absolute_path(&cloc->arena, directory_path); // Resolve any tricks in this path here to make our future easier.
+    s64 mark = mark_arena(&cloc->scratch);
     
-    File_Iterator iterator = find_first_file(&cloc->arena, resolved_path);
+    char *resolved_path = os_make_absolute_path(&cloc->scratch, directory_path); // Resolve any tricks in this path here to make our future easier.
+    
+    File_Iterator iterator = find_first_file(&cloc->scratch, resolved_path);
     
     while(iterator.valid) {
         if(strcmp(iterator.path, ".") == 0 || strcmp(iterator.path, "..") == 0) {
@@ -244,8 +254,10 @@ void register_directory_to_parse(Cloc *cloc, char *directory_path) {
             register_file_to_parse(cloc, combine_file_paths(cloc, resolved_path, iterator.path));
         }
 
-        find_next_file(&cloc->arena, &iterator);
+        find_next_file(&cloc->scratch, &iterator);
     }
+
+    reset_arena(&cloc->scratch, mark);
 }
 
 
@@ -259,7 +271,7 @@ void print_separator_line(Cloc *cloc, const char *content) {
     s64 content_length = strlen(content);
     if(content_length > 0) {
         String_Builder builder;
-        create_string_builder(&builder, &cloc->arena);
+        create_string_builder(&builder, &cloc->scratch);
     
         s64 total_stars = (OUTPUT_LINE_WIDTH - content_length - 2);
         s64 lhs_stars = total_stars / 2;
@@ -282,7 +294,7 @@ void print_separator_line(Cloc *cloc, const char *content) {
 static
 void print_table_header_line(Cloc *cloc) {
     String_Builder builder;
-    create_string_builder(&builder, &cloc->arena);
+    create_string_builder(&builder, &cloc->scratch);
 
     switch(cloc->output_mode) {
     case OUTPUT_By_File:
@@ -307,7 +319,7 @@ void print_table_header_line(Cloc *cloc) {
 static
 void print_table_entry_line(Cloc *cloc, Stats *stats, b8 is_language_entries) {
     String_Builder builder;
-    create_string_builder(&builder, &cloc->arena);
+    create_string_builder(&builder, &cloc->scratch);
     append_string_with_max_length(&builder, &stats->ident[cloc->common_prefix_length], (is_language_entries ? FILE_COUNT_COLUMN_OFFSET : EMPTY_LINES_COLUMN_OFFSET) - 3);
     if(is_language_entries)
         append_right_justified_integer_at_offset(&builder, stats->file_count,    ' ', FILE_COUNT_COLUMN_OFFSET);
@@ -381,7 +393,8 @@ int main(int argc, char *argv[]) {
     // Set up the global instance
     //
     Cloc cloc = { 0 };
-    create_arena(&cloc.arena, 1024 * 1024);
+    create_arena(&cloc.perm, 1024 * 1024);
+    create_arena(&cloc.scratch, 1024 * 1024);
     
     {
         cloc.cli_valid   = true;
@@ -459,7 +472,7 @@ int main(int argc, char *argv[]) {
 
         switch(cloc.output_mode) {
         case OUTPUT_By_File: {
-            Stats *sorted_stats = push_arena(&cloc.arena, cloc.file_count * sizeof(Stats));
+            Stats *sorted_stats = push_arena(&cloc.scratch, cloc.file_count * sizeof(Stats));
             memset(sorted_stats, 0, cloc.file_count * sizeof(Stats));
 
             s64 index = 0;
@@ -503,13 +516,17 @@ int main(int argc, char *argv[]) {
             print_separator_line(&cloc, "");
             print_table_entry_line(&cloc, &sum_stats, cloc.output_mode != OUTPUT_By_File);
         }
-        
+
         Hardware_Time end = os_get_hardware_time();
         f64 seconds   = os_convert_hardware_time_to_seconds(end - start);
+        f64 lps       = (sum_stats.blank + sum_stats.comment + sum_stats.code) / seconds;
         f64 megabytes = os_get_working_set_size() / 1000000;
-        print_separator_line(&cloc, aprint(&cloc.arena, "%.2fs / %.1fmb", seconds, megabytes));
+        print_separator_line(&cloc, aprint(&cloc.scratch, "%.2fs // %ld l/s // %.1fmb", seconds, (s64) lps, megabytes));
     }
 
+    destroy_arena(&cloc.perm);
+    destroy_arena(&cloc.scratch);
+    
     return cloc.cli_valid ? 0 : -1;
 }
 
@@ -517,7 +534,8 @@ int main(int argc, char *argv[]) {
 /*
  TODO:
  - [x] Port to linux
- - [ ] Add a lines / second calculation
- - [ ] Make a scratch arena for temporary file path conversion, so that hopefully we can cloc all of C:/source
+ - [x] Add a lines / second calculation
+ - [x] Make a scratch arena for temporary file path conversion, so that hopefully we can cloc all of C:/source
  - [ ] Implement an assembly parser
+ - [ ] Support exclusion of directories
 */
