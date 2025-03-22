@@ -39,6 +39,9 @@ typedef HANDLE File_Iterator_Handle;
 # include <pthread.h>
 # include <sys/resource.h>
 
+# define min(lhs, rhs) ((lhs) < (rhs) ? (lhs) : (rhs))
+# define max(lhs, rhs) ((lhs) > (rhs) ? (lhs) : (rhs))
+
 # define PRIu64 "lu"
 # define PRId64 "ld"
 # define PRIx64 "lx"
@@ -68,9 +71,6 @@ typedef DIR *File_Iterator_Handle;
 #else
 # error "This platform is not supported."
 #endif
-
-#define min(lhs, rhs) ((lhs) < (rhs) ? (lhs) : (rhs))
-#define max(lhs, rhs) ((lhs) > (rhs) ? (lhs) : (rhs))
 
 typedef enum OS_Path_Kind {
     OS_PATH_Non_Existent,

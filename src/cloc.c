@@ -521,7 +521,7 @@ int main(int argc, char *argv[]) {
         f64 seconds   = os_convert_hardware_time_to_seconds(end - start);
         f64 lps       = (sum_stats.blank + sum_stats.comment + sum_stats.code) / seconds;
         f64 megabytes = os_get_working_set_size() / 1000000;
-        print_separator_line(&cloc, aprint(&cloc.scratch, "%.2fs // %ld l/s // %.1fmb", seconds, (s64) lps, megabytes));
+        print_separator_line(&cloc, aprint(&cloc.scratch, "%.2fs // %" PRId64 " l/s // %.1fmb", seconds, (s64) lps, megabytes));
     }
 
     destroy_arena(&cloc.perm);
