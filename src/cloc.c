@@ -153,6 +153,25 @@ char *finish_string_builder(String_Builder *builder) {
 
 
 
+/* ----------------------------------------------- String List ----------------------------------------------- */
+
+String_List *append_string_list(Arena *arena, String_List *previous, char *content) {
+    String_List *next = push_arena(arena, sizeof(String_List));
+    next->next        = previous;
+    next->content     = content;
+    return next;
+}
+
+b8 string_list_contains(String_List *list, char *needle) {
+    while(list) {
+        if(strcmp(list->content, needle) == 0) return true;
+        list = list->next;
+    }
+    return false;
+}
+
+
+
 /* ----------------------------------------------- Cloc Helpers ----------------------------------------------- */
 
 File *get_next_file_to_parse(Cloc *cloc) {
@@ -248,7 +267,7 @@ void register_directory_to_parse(Cloc *cloc, char *directory_path) {
     while(iterator.valid) {
         if(strcmp(iterator.path, ".") == 0 || strcmp(iterator.path, "..") == 0) {
             // Ignore these paths
-        } else if(iterator.kind == OS_PATH_Is_Directory) {
+        } else if(iterator.kind == OS_PATH_Is_Directory && !string_list_contains(cloc->excluded_directories, iterator.path)) {
             register_directory_to_parse(cloc, combine_file_paths(cloc, resolved_path, iterator.path));
         } else if(iterator.kind == OS_PATH_Is_File) {
             register_file_to_parse(cloc, combine_file_paths(cloc, resolved_path, iterator.path));
@@ -397,48 +416,77 @@ int main(int argc, char *argv[]) {
     create_arena(&cloc.scratch, 1024 * 1024);
     
     {
+
+#define EXPECT_ADDITIONAL_ARG() if(i + 1 >= argc || argv[i + 1][0] == '-') { \
+            printf("[ERROR]: The option '%s' expects an additional argument.\n", argv[i]); \
+            cloc.cli_valid = false;                                     \
+            i += 1;                                                     \
+            continue;                                                   \
+        }
+
         cloc.cli_valid   = true;
         cloc.output_mode = OUTPUT_By_Language;
         cloc.no_jobs     = false;
         
-        for(int i = 1; i < argc; ++i) {
+        //
+        // Do the argument parsing in two stages, so that the order in which arguments and file paths are
+        // specified doesn't matter.
+        //
+        String_List *filepaths = NULL;
+
+        for(int i = 1; i < argc;) {
             char *argument = argv[i];
 
             if(argument[0] != '-') {
-                //
-                // Register new files to parse
-                //
-                OS_Path_Kind path_kind = os_resolve_path_kind(argument);
-                switch(path_kind) {
-                case OS_PATH_Is_File:
-                    register_file_to_parse(&cloc, argument);
-                    break;
-
-                case OS_PATH_Is_Directory:
-                    register_directory_to_parse(&cloc, argument);
-                    break;
-
-                case OS_PATH_Non_Existent:
-                    printf("[ERROR]: The file path '%s' doesn't exist.\n", argument);
-                    cloc.cli_valid = false;
-                    break;
-                }
+                filepaths = append_string_list(&cloc.scratch, filepaths, argument);
+                ++i;
             } else if(strcmp(argument, "--by-lang") == 0) {
                 cloc.output_mode = OUTPUT_By_Language;
+                ++i;
             } else if(strcmp(argument, "--by-file") == 0) {
                 cloc.output_mode = OUTPUT_By_File;
+                ++i;
             } else if(strcmp(argument, "--no-jobs") == 0) {
                 cloc.no_jobs = true;
+                ++i;
+            } else if(strcmp(argument, "--exclude-dir") == 0) {
+                EXPECT_ADDITIONAL_ARG();
+                cloc.excluded_directories = append_string_list(&cloc.perm, cloc.excluded_directories, argv[i + 1]);
+                i += 2;
             } else {
                 printf("[ERROR]: Unrecognized command line option '%s'.\n", argument);
                 cloc.cli_valid = false;
+                ++i;
             }
         }
 
+        for(String_List *filepath = filepaths; filepath; filepath = filepath->next) {
+            //
+            // Register new files to parse
+            //
+            OS_Path_Kind path_kind = os_resolve_path_kind(filepath->content);
+            switch(path_kind) {
+            case OS_PATH_Is_File:
+                register_file_to_parse(&cloc, filepath->content);
+                break;
+
+            case OS_PATH_Is_Directory:
+                register_directory_to_parse(&cloc, filepath->content);
+                break;
+
+            case OS_PATH_Non_Existent:
+                printf("[ERROR]: The file path '%s' doesn't exist.\n", filepath->content);
+                cloc.cli_valid = false;
+                break;
+            }
+        }
+        
         if(cloc.cli_valid && cloc.first_file == NULL) {
             printf("[ERROR]: Please specify at least one source file to cloc.\n");
             cloc.cli_valid = false;
         }
+        
+#undef EXPECT_ADDITIONAL_ARG
     }
     
     if(cloc.cli_valid) {

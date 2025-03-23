@@ -39,6 +39,14 @@ void print_string_builder(String_Builder *builder);
 void print_string_builder_as_line(String_Builder *builder);
 char *finish_string_builder(String_Builder *builder);
 
+typedef struct String_List {
+    struct String_List *next;
+    char *content;
+} String_List;
+
+String_List *append_string_list(Arena *arena, String_List *previous, char *content);
+b8 string_list_contains(String_List *list, char *needle);
+
 typedef enum Language {
     LANGUAGE_C,
     LANGUAGE_C_Header,
@@ -73,20 +81,23 @@ typedef struct Cloc {
     Arena perm;
     Arena scratch;
 
+    // --- CLI Options
     b8 cli_valid;
-
-    Output_Mode output_mode;
     b8 no_jobs;
+    Output_Mode output_mode;
+    String_List *excluded_directories;
     
+    // --- Files
+    File *first_file;
+    File *next_file;
+    s64 file_count;
+
     // Over all outputted line table entries, we find the common prefix that we can then omit in the output table.
     // This avoids having very long paths when all the files are in the same directory.
     const char *common_prefix;
     s64 common_prefix_length;
-    
-    File *first_file;
-    File *next_file;
-    s64 file_count;
-    
+
+    // --- Content
     Worker workers[MAX_WORKERS];
     s64 active_workers;
 } Cloc;
